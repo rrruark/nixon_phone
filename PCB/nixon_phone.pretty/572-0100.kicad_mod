@@ -1,0 +1,151 @@
+(footprint "572-0100"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(property "Reference" "REF**"
+		(at 5.334 0 270)
+		(unlocked yes)
+		(layer "F.SilkS")
+		(uuid "d618dd97-8b21-497a-9913-702c344306c6")
+		(effects
+			(font
+				(size 0.95504 0.95504)
+				(thickness 0.06096)
+			)
+			(justify left bottom)
+		)
+	)
+	(property "Value" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(uuid "d44f281f-cd6a-45b2-bcdc-4090c2fdb66c")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "65548034-284c-4f1b-be3b-8f7a47f3d73c")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "b8d63eed-20fb-4a8d-b15b-04efe604de33")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(fp_line
+		(start -5 0)
+		(end -5 27.2)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "cfbdcd0e-805f-4828-94a4-5ac85b5c5b48")
+	)
+	(fp_line
+		(start -5 27.2)
+		(end 5 27.2)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "be759c2e-ee77-4feb-b65b-5a9cd159600e")
+	)
+	(fp_line
+		(start 5 0)
+		(end -5 0)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "a9663974-ec41-4bf4-ac98-a30e2a3ecaaf")
+	)
+	(fp_line
+		(start 5 27.2)
+		(end 5 0)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "e2880f54-9723-4259-a012-8e8fea32c2ce")
+	)
+	(fp_text user "BACK"
+		(at 4.572 26.924 90)
+		(unlocked yes)
+		(layer "F.SilkS")
+		(uuid "1f86b153-cafd-4304-b432-843761df8fad")
+		(effects
+			(font
+				(size 0.95504 0.95504)
+				(thickness 0.06096)
+			)
+			(justify left bottom)
+		)
+	)
+	(fp_text user "PANEL"
+		(at -4.572 0.508 270)
+		(unlocked yes)
+		(layer "F.SilkS")
+		(uuid "64f17bc7-5466-4d45-aeae-4f468387cf1a")
+		(effects
+			(font
+				(size 0.95504 0.95504)
+				(thickness 0.06096)
+			)
+			(justify left bottom)
+		)
+	)
+	(pad "1" thru_hole circle
+		(at 0 2.15)
+		(size 2.7 2.7)
+		(drill 1.8)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(solder_mask_margin 0.1016)
+		(thermal_bridge_angle 0)
+		(uuid "e1ec5e2e-fbcf-4c32-a26e-81b4852524d4")
+	)
+	(pad "2" thru_hole circle
+		(at 0 17.45)
+		(size 2.7 2.7)
+		(drill 1.8)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(solder_mask_margin 0.1016)
+		(thermal_bridge_angle 0)
+		(uuid "9b2a4a20-3eef-4f2a-bfcc-3fdc6bd787ca")
+	)
+	(pad "3" thru_hole circle
+		(at 0 25.05)
+		(size 2.7 2.7)
+		(drill 1.8)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(solder_mask_margin 0.1016)
+		(thermal_bridge_angle 0)
+		(uuid "50e15c8e-43fa-40e7-a4f2-d9a2af24c364")
+	)
+	(embedded_fonts no)
+)
