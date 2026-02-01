@@ -105,14 +105,17 @@ static bool prev_button_2_state = true;
 // durationMs: duration in milliseconds
 void ringPhone(uint8_t phoneNum, uint32_t durationMs) {
   uint8_t rm_pin, fr_pin;
+  uint8_t shk_pin;  // SHK pin for the phone being rung (off-hook = stop ringing)
   
   if (phoneNum == 1) {
     rm_pin = RM_1_PIN;
     fr_pin = FR_1_PIN;
+    shk_pin = SHK_1_PIN;
     Serial.println("Ringing phone 1...");
   } else if (phoneNum == 2) {
     rm_pin = RM_2_PIN;
     fr_pin = FR_2_PIN;
+    shk_pin = SHK_2_PIN;
     Serial.println("Ringing phone 2...");
   } else {
     Serial.println("Invalid phone number");
@@ -123,10 +126,15 @@ void ringPhone(uint8_t phoneNum, uint32_t durationMs) {
   digitalWrite(rm_pin, HIGH);
   
   // Toggle F/R at ~20 Hz (25ms per half cycle = 50ms per full cycle)
+  // Stop early if the phone being rung goes off-hook (SHK HIGH)
   uint32_t startTime = millis();
   bool fr_state = false;
   
   while (millis() - startTime < durationMs) {
+    if (digitalRead(shk_pin) == HIGH) {
+      Serial.printf("Phone %d answered - ceasing ring\n", phoneNum);
+      break;
+    }
     digitalWrite(fr_pin, fr_state ? HIGH : LOW);
     fr_state = !fr_state;
     delay(25);  // 25ms delay = 20 Hz toggle frequency
