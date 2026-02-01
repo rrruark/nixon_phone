@@ -1,2 +1,5 @@
 #Use this command to convert mp3 files to the expected wav file format.
+
 ffmpeg -i input.mp3 -ar 44100 -ac 2 -sample_fmt s16 output.wav
+
+#The audio files should be put into a folder named 'nixon' on a fat32 formatted micro sd card.
