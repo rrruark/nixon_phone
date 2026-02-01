@@ -1,9 +1,5 @@
 
 *.wav
-audio/37-wht-conversation-001-004-pa.mp3
-audio/37-wht-conversation-001-014-pa.mp3
-audio/37-wht-conversation-001-016-pa.mp3
-audio/37-wht-conversation-001-017-pa.mp3
-audio/37-wht-conversation-001-021-pa.mp3
-audio/37-wht-conversation-001-027-pa.mp3
 *.mp3
+!audio/17-21-georgebush.mp3
+!audio/17-21-georgebush.wav
