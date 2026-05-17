@@ -24965,6 +24965,26 @@
 		(uuid "41661ae7-997c-4469-8211-1849a961e8a6")
 	)
 	(gr_line
+		(start 148 66)
+		(end 148 58.5)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(layer "Cmts.User")
+		(uuid "2b0b5d7b-7b1d-4c4c-a544-b95ba4ae429f")
+	)
+	(gr_line
+		(start 148.5 55.5)
+		(end 148.5 51)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(layer "Cmts.User")
+		(uuid "7cbf2613-f50c-4545-8b09-07ef80ec0695")
+	)
+	(gr_line
 		(start 113.5011 50.0036)
 		(end 113.5011 160.0036)
 		(stroke

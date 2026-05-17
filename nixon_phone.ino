@@ -2,6 +2,7 @@
 #include <SPI.h>
 #include <SD.h>
 #include <Wire.h>
+#include <math.h>
 
 // PCM5102 DAC Pin Definitions
 #define I2S_BCK_PIN    26  // IO26: DAC_BCK (Bit Clock)
@@ -62,11 +63,11 @@
 #define WAV_FOLDER_PATH  "/nixon"
 
 // Maximum number of WAV files to support
-#define MAX_WAV_FILES    20
+#define MAX_WAV_FILES    1000
 
 // WAV file list
 String wavFiles[MAX_WAV_FILES];
-uint8_t wavFileCount = 0;
+uint16_t wavFileCount = 0;
 String currentWavFile = "";
 
 // WAV file handle
@@ -77,6 +78,23 @@ uint32_t wavBytesRead = 0;   // Bytes read from data chunk
 bool playbackStarted = false;  // Track if playback has started
 uint32_t consecutiveReadFailures = 0;  // Track consecutive read failures
 bool playbackActive = false;  // Track if playback should be active (controlled by SHK)
+bool playingDialTone = false;  // After recording ends, play dial tone until SHK cycle
+
+// Dial tone: 350 Hz + 440 Hz (US standard). Use lookup table for clean output.
+#define DIAL_TONE_F1       350
+#define DIAL_TONE_F2       440
+#define DIAL_TONE_AMPLITUDE 14000   // Slightly under 0.5*32767 for headroom
+#define SINE_TABLE_SIZE     512
+static int16_t sineTable[SINE_TABLE_SIZE];
+static uint32_t dialTonePhase1 = 0;  // Fixed-point: top bits = table index
+static uint32_t dialTonePhase2 = 0;
+#define PHASE_BITS 16
+#define PHASE_INC(freq) ((uint32_t)((freq) * (1UL << PHASE_BITS) / SAMPLE_RATE))
+
+// Rotary-dial pulses momentarily drop SHK; don't treat that as hangup.
+// Also avoid starting a new file between pulses.
+#define SHK_HANGUP_CONFIRM_MS 200
+#define SHK_PICKUP_CONFIRM_MS 200
 
 // Previous state of SHK pins for transition detection
 static bool prev_shk_1_state = false;
@@ -179,6 +197,20 @@ void detectRotaryDialPulses(bool shk_1_current, bool shk_2_current) {
       Serial.println("Phone 1 dialed '0' - ringing phone 2");
       setMuxDialConfig();
       ringPhone(2, 2000);  // Ring phone 2 for 2 seconds
+      // If we were in dial tone when 0 was dialed, stop dial tone/audio
+      if (playbackActive || playingDialTone) {
+        Serial.println("Stopping dial tone/audio due to placed call (phone 1 dialed 0)");
+        playbackActive = false;
+        playbackStarted = false;
+        playingDialTone = false;
+        if (wavFile) {
+          wavFile.close();
+          wavFile = File();
+        }
+        wavBytesRead = 0;
+        wavDataSize = 0;
+        currentWavFile = "";
+      }
     }
     pulseDetector_1.pulseCount = 0;
     pulseDetector_1.dialingActive = false;
@@ -191,6 +223,20 @@ void detectRotaryDialPulses(bool shk_1_current, bool shk_2_current) {
       Serial.println("Phone 2 dialed '0' - ringing phone 1");
       setMuxDialConfig();
       ringPhone(1, 2000);  // Ring phone 1 for 2 seconds
+      // If we were in dial tone when 0 was dialed, stop dial tone/audio
+      if (playbackActive || playingDialTone) {
+        Serial.println("Stopping dial tone/audio due to placed call (phone 2 dialed 0)");
+        playbackActive = false;
+        playbackStarted = false;
+        playingDialTone = false;
+        if (wavFile) {
+          wavFile.close();
+          wavFile = File();
+        }
+        wavBytesRead = 0;
+        wavDataSize = 0;
+        currentWavFile = "";
+      }
     }
     pulseDetector_2.pulseCount = 0;
     pulseDetector_2.dialingActive = false;
@@ -327,7 +373,7 @@ void scanWAVFiles() {
   }
   root.close();
   
-  Serial.printf("Found %d WAV files\n", wavFileCount);
+  Serial.printf("Found %u WAV files\n", wavFileCount);
 }
 
 // Function to pick a random WAV file
@@ -338,8 +384,8 @@ String pickRandomWAVFile() {
   }
   
   // Use ESP32's random number generator (seeded by noise)
-  uint8_t index = random(0, wavFileCount);
-  Serial.printf("Selected random file %d: %s\n", index, wavFiles[index].c_str());
+  uint16_t index = random(0, wavFileCount);
+  Serial.printf("Selected random file %u: %s\n", index, wavFiles[index].c_str());
   return wavFiles[index];
 }
 
@@ -365,7 +411,11 @@ bool openWAVFile(String filePath) {
     wavBytesRead = 0;
     consecutiveReadFailures = 0;
     currentWavFile = filePath;
-    Serial.println("WAV file opened and initialized successfully");
+    // Duration = data size / (sample_rate * channels * bytes_per_sample)
+    float durationSec = (float)wavDataSize / (float)(SAMPLE_RATE * CHANNELS * 2);
+    uint32_t mins = (uint32_t)(durationSec / 60.0f);
+    uint32_t secs = (uint32_t)(durationSec) % 60;
+    Serial.printf("Playing: %s (length %um %02us)\n", filePath.c_str(), (unsigned)mins, (unsigned)secs);
     return true;
   } else {
     wavFile.close();
@@ -377,6 +427,39 @@ bool openWAVFile(String filePath) {
 // Function to reopen and reinitialize the WAV file
 bool reopenWAVFile() {
   return openWAVFile(currentWavFile);
+}
+
+// Fill sine lookup table (one period, 16-bit). Call once from setup().
+void initDialToneTable() {
+  for (int i = 0; i < SINE_TABLE_SIZE; i++) {
+    float v = sinf(6.28318530718f * (float)i / (float)SINE_TABLE_SIZE);
+    sineTable[i] = (int16_t)(v * 32767.0f);
+  }
+}
+
+// Generate and write one buffer of 350+440 Hz dial tone (stereo 16-bit I2S).
+// Uses fixed-point phase + lookup table to avoid float drift and corruption.
+void writeDialToneBuffer() {
+  const size_t numFrames = BUFFER_SIZE;  // stereo frames
+  const uint32_t inc1 = PHASE_INC(DIAL_TONE_F1);
+  const uint32_t inc2 = PHASE_INC(DIAL_TONE_F2);
+  const int shift = PHASE_BITS - 9;  // 512 = 2^9
+  const uint32_t mask = SINE_TABLE_SIZE - 1;
+  static int16_t toneBuffer[BUFFER_SIZE * 2];
+  for (size_t i = 0; i < numFrames; i++) {
+    uint32_t idx1 = (dialTonePhase1 >> shift) & mask;
+    uint32_t idx2 = (dialTonePhase2 >> shift) & mask;
+    dialTonePhase1 += inc1;
+    dialTonePhase2 += inc2;
+    int32_t sum = (int32_t)sineTable[idx1] + (int32_t)sineTable[idx2];
+    int32_t sample = (sum * (int32_t)DIAL_TONE_AMPLITUDE) / 32767;
+    if (sample < -32767) sample = -32767;
+    if (sample > 32767) sample = 32767;
+    toneBuffer[i * 2] = (int16_t)sample;      // L
+    toneBuffer[i * 2 + 1] = (int16_t)sample;  // R
+  }
+  size_t bytes_written;
+  i2s_write(I2S_PORT, toneBuffer, numFrames * 2 * sizeof(int16_t), &bytes_written, portMAX_DELAY);
 }
 
 // Function to parse WAV file header
@@ -484,6 +567,9 @@ void setup() {
   
   Serial.println("I2S driver installed and started");
   
+  // Precompute sine table for clean dial tone (350+440 Hz)
+  initDialToneTable();
+  
   // Configure SHK pins as inputs with pull-up resistors
   pinMode(SHK_1_PIN, INPUT_PULLUP);
   pinMode(SHK_2_PIN, INPUT_PULLUP);
@@ -539,7 +625,7 @@ void setup() {
     scanWAVFiles();
     
     if (wavFileCount > 0) {
-      Serial.printf("Found %d WAV files. Waiting for SHK signal to start playback...\n", wavFileCount);
+      Serial.printf("Found %u WAV files. Waiting for SHK signal to start playback...\n", wavFileCount);
     } else {
       Serial.println("No WAV files found in nixon folder!");
     }
@@ -602,12 +688,37 @@ void loop() {
     digitalWrite(LED_RED_PIN, LOW);
   }
   
+  // Debounce SHK so rotary-dial pulses don't start/stop audio.
+  static bool prev_shk_any_high = false;
+  static unsigned long shkHighSinceMs = 0;
+  static bool hangupPending = false;
+  static unsigned long hangupSinceMs = 0;
+  if (shk_any_high != prev_shk_any_high) {
+    if (shk_any_high) {
+      shkHighSinceMs = millis();
+      hangupPending = false;
+    } else {
+      hangupSinceMs = millis();
+      hangupPending = true;
+    }
+    prev_shk_any_high = shk_any_high;
+  }
+  if (shk_any_high) {
+    hangupPending = false;
+  }
+
   // Control playback based on SHK state
   if (shk_any_high && !playbackActive) {
+    // Require SHK to be stable HIGH before starting playback (prevents starting between dial pulses)
+    if (millis() - shkHighSinceMs < SHK_PICKUP_CONFIRM_MS) {
+      delay(1);
+      return;
+    }
     // SHK went HIGH - start playback
     Serial.println("SHK HIGH detected - starting playback");
     playbackActive = true;
     playbackStarted = false;
+    playingDialTone = false;
     
     // Pick and open a random WAV file
     if (wavFileCount > 0) {
@@ -624,11 +735,13 @@ void loop() {
       Serial.println("No WAV files available for playback");
       playbackActive = false;
     }
-  } else if (!shk_any_high && playbackActive) {
-    // Both SHK went LOW - stop playback
-    Serial.println("SHK LOW detected - stopping playback");
+  } else if (playbackActive && hangupPending && (millis() - hangupSinceMs >= SHK_HANGUP_CONFIRM_MS)) {
+    // SHK stayed LOW long enough to be a real hangup (not a rotary pulse)
+    Serial.println("SHK LOW confirmed - stopping playback");
     playbackActive = false;
     playbackStarted = false;
+    playingDialTone = false;
+    hangupPending = false;
     
     // Close current file
     if (wavFile) {
@@ -640,24 +753,32 @@ void loop() {
     currentWavFile = "";
   }
   
-  // Play WAV file only if playback is active and file is open
-  if (playbackActive && wavFile) {
+  // Play dial tone when recording has finished until SHK goes low
+  if (playbackActive && playingDialTone) {
+    writeDialToneBuffer();
+    return;
+  }
+  
+  // Play WAV file only if playback is active and file is open (not in dial tone)
+  if (playbackActive && wavFile && !playingDialTone) {
     // Check if we've reached the end of audio data
     if (wavBytesRead >= wavDataSize) {
-      // Pick a new random file instead of looping the same one
-      Serial.println("End of file reached, selecting new random file...");
-      String randomFile = pickRandomWAVFile();
-      if (randomFile.length() > 0) {
-        if (!openWAVFile(randomFile)) {
-          Serial.println("Failed to open new random file");
-          playbackActive = false;  // Stop playback on error
-          return;  // Failed to open, skip this iteration
-        }
-      } else {
-        Serial.println("No WAV files available");
-        playbackActive = false;  // Stop playback if no files
-        return;
+      if (wavFile) {
+        wavFile.close();
+        wavFile = File();
       }
+      wavBytesRead = 0;
+      wavDataSize = 0;
+      currentWavFile = "";
+      // Only play dial tone when one phone is off-hook. When two phones have
+      // called each other (dialed 0), stay silent until both hang up.
+      if (!muxConfiguredForDial) {
+        Serial.println("End of recording - playing dial tone until hang up");
+        dialTonePhase1 = 0;
+        dialTonePhase2 = 0;
+        playingDialTone = true;
+      }
+      return;
     }
     
     // Calculate how many bytes we can read (limit to buffer size)
@@ -706,6 +827,11 @@ void loop() {
       delay(10);
     }
   } else if (playbackActive) {
+    // If two phones are in a call (one dialed 0), do not start new recording or dial tone
+    if (muxConfiguredForDial) {
+      delay(10);
+      return;
+    }
     // If playback is active but file is not open, try to open a file
     static unsigned long lastCheck = 0;
     if (millis() - lastCheck > 1000) {
